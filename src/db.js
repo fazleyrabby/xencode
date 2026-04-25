@@ -29,6 +29,13 @@ export function getDb() {
         value TEXT
       )
     `);
+    
+    // Migration: add code_full column if missing
+    try {
+      db.exec(`ALTER TABLE code_chunks ADD COLUMN code_full TEXT`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
   }
   return db;
 }
@@ -74,6 +81,12 @@ export function getLastIndexedAt() {
     SELECT value FROM meta WHERE key = 'last_indexed_at'
   `).get();
   return result ? parseInt(result.value, 10) : null;
+}
+
+export function getChunkCount() {
+  const database = getDb();
+  const result = database.prepare(`SELECT COUNT(*) as count FROM code_chunks`).get();
+  return result ? result.count : 0;
 }
 
 export function getAllChunks() {
