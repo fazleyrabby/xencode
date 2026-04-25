@@ -32,7 +32,7 @@ Xencode needs a local LLM server running. Examples:
 ### MLX (Apple Silicon)
 
 ```bash
-~/.venv/hujjah-mlx/bin/mlx_lm.server \
+~/.venv/<your-venv>/bin/mlx_lm.server \
   --model ~/ai/models/Qwen3.5-9B-OptiQ-4bit \
   --port 8080 \
   --host 127.0.0.1 \
