@@ -4,22 +4,21 @@ import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-const LOCAL_MODEL_PATH = join(__dirname, '../models/bge-m3/');
+const PROJECT_ROOT = join(__dirname, '..');
 
 env.allowLocalModels = true;
 env.allowRemoteModels = false;
-env.localModelPath = dirname(LOCAL_MODEL_PATH);
+env.localModelPath = join(PROJECT_ROOT, 'models');
+env.useBrowserCache = false;
 
-const BATCH_SIZE = 64;
-const THROTTLE_BATCH_INTERVAL = 100;
-const THROTTLE_DELAY_MS = 10;
+const MAX_INPUT_LENGTH = 256;
 const RETRY_ATTEMPTS = 2;
 
 let embedder = null;
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function truncateText(text) {
+  if (text.length <= MAX_INPUT_LENGTH) return text;
+  return text.substring(0, MAX_INPUT_LENGTH);
 }
 
 function chunkArray(array, size) {
@@ -50,8 +49,7 @@ function normalizeEmbedding(embedding) {
 
 export async function getEmbedder() {
   if (!embedder) {
-    const modelName = 'bge-m3';
-    embedder = await pipeline('feature-extraction', modelName, {
+    embedder = await pipeline('feature-extraction', 'bge-m3', {
       quantized: true
     });
   }
@@ -60,28 +58,24 @@ export async function getEmbedder() {
 
 export async function embedBatchForDb(texts, onBatch) {
   const model = await getEmbedder();
-  const batches = chunkArray(texts, BATCH_SIZE);
+  const truncated = texts.map(truncateText);
+  const batchSize = 32;
+  const batches = chunkArray(truncated, batchSize);
   const total = texts.length;
+  const startTime = Date.now();
 
   for (let b = 0; b < batches.length; b++) {
     const batch = batches[b];
-    const processed = Math.min((b + 1) * BATCH_SIZE, total);
-    const percent = Math.round((processed / total) * 100);
-
-    process.stdout.write(`\rEmbedding: ${processed} / ${total} (${percent}%)`);
-
     let batchEmbeddings = null;
-    let success = false;
 
     for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
       try {
         const output = await model(batch, { pooling: 'mean', normalize: false });
         batchEmbeddings = output.tolist();
-        success = true;
         break;
       } catch (err) {
         if (attempt === RETRY_ATTEMPTS - 1) {
-          console.error(`\nBatch ${b + 1} failed after ${RETRY_ATTEMPTS} attempts: ${err.message}`);
+          console.error(`\nBatch ${b + 1} failed: ${err.message}`);
           batchEmbeddings = new Array(batch.length).fill(null);
         }
       }
@@ -93,25 +87,22 @@ export async function embedBatchForDb(texts, onBatch) {
     });
 
     onBatch(normalizedEmbeddings, b);
-
-    if ((b + 1) % THROTTLE_BATCH_INTERVAL === 0) {
-      await sleep(THROTTLE_DELAY_MS);
-    }
   }
 
-  console.log();
+  const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n✓ Done: ${total} embeddings in ${totalTime}s (${Math.round(total / parseFloat(totalTime))} chunks/sec)`);
 }
 
 export async function embedBatch(texts, batchSize = 32) {
   const model = await getEmbedder();
-  const batches = chunkArray(texts, batchSize);
+  const truncated = texts.map(truncateText);
+  const batches = chunkArray(truncated, batchSize);
   const embeddings = [];
+  const startTime = Date.now();
+  const total = texts.length;
 
   for (let b = 0; b < batches.length; b++) {
     const batch = batches[b];
-    const processed = Math.min((b + 1) * batchSize, texts.length);
-    process.stdout.write(`\rEmbedding: ${processed} / ${texts.length}`);
-
     let output;
     try {
       output = await model(batch, { pooling: 'mean', normalize: false });
@@ -124,13 +115,11 @@ export async function embedBatch(texts, batchSize = 32) {
     for (const emb of batchEmbeddings) {
       embeddings.push(normalizeEmbedding(new Float32Array(emb)));
     }
-
-    if ((b + 1) % THROTTLE_BATCH_INTERVAL === 0) {
-      await sleep(THROTTLE_DELAY_MS);
-    }
   }
 
-  console.log();
+  const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n✓ Done: ${total} embeddings in ${totalTime}s (${Math.round(total / parseFloat(totalTime))} chunks/sec)`);
+
   return embeddings;
 }
 

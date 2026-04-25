@@ -12,6 +12,7 @@ const EXCLUDED_DIRS = new Set([
 
 const MIN_CODE_LENGTH = 50;
 const MAX_CODE_LENGTH = 5000;
+const EMBEDDING_TRUNCATE = 256;
 
 function hashCode(code) {
   return createHash('sha256').update(code).digest('hex').substring(0, 16);
@@ -99,12 +100,14 @@ export async function indexFile(filePath) {
     if (content.length < MIN_CODE_LENGTH) return [];
 
     if (ext === '.blade.php') {
+      const codeFull = content.length > MAX_CODE_LENGTH ? content.substring(0, MAX_CODE_LENGTH) : content;
       chunks.push({
         id: `${filePath}:file`,
         file: filePath,
         type: 'file',
         name: fileName,
-        code: content.length > MAX_CODE_LENGTH ? content.substring(0, MAX_CODE_LENGTH) : content
+        code: codeFull.substring(0, EMBEDDING_TRUNCATE),
+        code_full: codeFull
       });
       return chunks;
     }
