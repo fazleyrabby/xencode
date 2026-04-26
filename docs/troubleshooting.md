@@ -124,3 +124,69 @@ node src/app.js index ./project
 1. Ensure you're running in an interactive terminal (not piped input)
 2. Try resizing the terminal window
 3. Press Ctrl+C to cancel and retry
+
+## Workspace Issues
+
+### "No active project" Error
+
+**Symptoms**: `⚠️ No active project. Index or switch to a project first.`
+
+**Cause**: No project has been indexed, or `current_project.json` is missing/corrupted.
+
+**Fix**:
+```bash
+# Index a project
+node src/app.js index ./my-project
+
+# Or list and switch to an existing one
+node src/app.js projects
+node src/app.js use <project-id>
+```
+
+### Project Not Found After Re-indexing
+
+**Cause**: The project path changed (moved folder, different symlink), generating a new project ID.
+
+**Fix**:
+1. Run `node src/app.js projects` to see all registered projects
+2. Re-index with the current path: `node src/app.js index ./my-project`
+3. Delete old unused projects from `.xencode/projects/`
+
+### Wrong Project Being Used
+
+**Cause**: Auto-detection matched a different project, or `current_project.json` points to the wrong project.
+
+**Fix**:
+```bash
+# Explicitly switch to the correct project
+node src/app.js use <project-id>
+
+# Verify current project
+node src/app.js projects
+```
+
+### Database File Not Found
+
+**Symptoms**: Errors about missing `.xencode/projects/{id}/index.db`
+
+**Cause**: The project was registered but never indexed, or the database was deleted.
+
+**Fix**: Re-index the project:
+```bash
+node src/app.js index /path/to/project
+```
+
+### Cleaning Up Old Projects
+
+Projects are stored in `.xencode/projects/`. To remove an unused project:
+
+```bash
+# List projects to find the ID
+node src/app.js projects
+
+# Remove the project directory
+rm -rf .xencode/projects/<project-id>
+
+# If it was the current project, switch to another
+node src/app.js use <another-project-id>
+```

@@ -11,7 +11,8 @@ Local-first code-aware RAG assistant and agentic coding system for PHP/JS/TS/Vue
 - **CLI spinners** - animated progress with ETA
 - **Stale index warning** - alerts if index is outdated
 - **Agentic coding** - plan → retrieve → patch → diff → approve → apply
-- **Interactive approval UI** - keyboard-driven patch review (↑↓ + Enter)
+- **Inline approval UI** - keyboard-driven patch review (Enter/Esc/E/V)
+- **Multi-project workspaces** - index and switch between multiple projects
 
 ## Quick Start
 
@@ -37,15 +38,19 @@ node src/app.js agent "Add refund method to PaymentService"
 # Index a codebase
 node src/app.js index ./my-project
 
-# Ask questions
+# List indexed projects
+node src/app.js projects
+
+# Switch between projects
+node src/app.js use my-project
+
+# Ask questions (auto-detects current project)
 node src/app.js ask "Show me the Product model"
 node src/app.js ask "How does refund payment work?"
-node src/app.js ask "Explain the subscription flow"
 
-# Generate patches with interactive approval
+# Generate patches with inline approval
 node src/app.js agent "Add refund method to PaymentService"
-node src/app.js agent "Create Laravel refund service"
-node src/app.js agent "Add validation to checkout" --review
+node src/app.js agent "Create Laravel refund service" --review
 
 # Re-index after code changes
 node src/app.js index ./my-project
@@ -71,19 +76,19 @@ export LLM_MODEL_REVIEWER=""   # Strict model for review
 - Node.js ESM
 - OpenAI-compatible LLM API
 - diff + chalk for colored diff output
-- enquirer for interactive CLI prompts
 
 ## Project Structure
 
 ```
 src/
   app.js          - CLI entry point
+  workspace.js    - Multi-project workspace manager
   embedder.js     - BGE-M3 embedding (256 char truncation)
   indexer.js      - Code scanning & chunking
   search.js       - Hybrid search (vector + keyword)
   context.js      - Result formatting
   llm.js          - LLM client (role-based routing)
-  db.js           - SQLite storage
+  db.js           - Per-project SQLite storage
   ui.js           - Spinner animations
   agent/
     agent.js      - Orchestrator (pipeline)
@@ -92,7 +97,10 @@ src/
     reviewer.js   - Validation + retry
     tool.js       - Patch application
     diff.js       - Unified diff output
-    approval.js   - Interactive approval UI
+    approval.js   - Inline approval UI (keypress)
+.xencode/
+  projects/       - Per-project databases
+  current_project.json
 docs/
   guide.md        - Full user guide
   architecture.md - System design

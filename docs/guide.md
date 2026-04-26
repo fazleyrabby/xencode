@@ -149,7 +149,48 @@ Based on the provided code context, the billing system works through...
 
 ---
 
-## Step 4: Generate and Apply Patches (Agent Mode)
+## Step 4: Manage Projects (Workspaces)
+
+Xencode supports multiple indexed projects. Each project has its own isolated database.
+
+### List Projects
+
+```bash
+node src/app.js projects
+```
+
+**Output:**
+
+```
+Indexed projects:
+
+  ● litepos-tester /Users/rabbi/Desktop/Projects/Laravel/litepos-tester
+   (indexed 5m ago, 872 chunks)
+
+  ○ another-project /Users/rabbi/Desktop/Projects/another-project
+   (indexed 2h ago, 432 chunks)
+```
+
+The `●` marker shows the current active project.
+
+### Switch Projects
+
+```bash
+node src/app.js use <project-id>
+```
+
+Example:
+```bash
+node src/app.js use litepos-tester-11f2c47ecb4a8ce5
+```
+
+### Auto-Detection
+
+When you run `ask` or `agent`, Xencode automatically detects the project based on your current working directory. If you're inside an indexed project's path, it will be used automatically.
+
+---
+
+## Step 5: Generate and Apply Patches (Agent Mode)
 
 The agent mode transforms Xencode from a Q&A assistant into an **interactive coding assistant** that generates minimal patches, shows diffs, and requires your approval before applying changes.
 
@@ -236,7 +277,7 @@ node src/app.js agent "Extract the payment validation logic into a separate meth
 
 ---
 
-## Step 5: Re-index When Code Changes
+## Step 6: Re-index When Code Changes
 
 If you modify your codebase, re-index to update:
 

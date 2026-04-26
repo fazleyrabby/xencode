@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.5.0] - 2026-04-26
+
+### Multi-Project Workspaces (NEW)
+
+- **Workspace manager** (`src/workspace.js`): Project registration, switching, auto-detection
+- **Per-project databases**: Each project gets its own `index.db` in `.xencode/projects/{id}/`
+- **Project isolation**: No data leakage between projects, no re-indexing on switch
+- **Auto-detection**: Running `ask` or `agent` auto-matches project by cwd path
+- **CLI commands**:
+  - `node src/app.js projects` — list all indexed projects with current marker
+  - `node src/app.js use <project>` — switch active project
+  - `node src/app.js index <path>` — register and index (auto-sets as current)
+
+### Codex-Style Inline Approval UI
+
+- **Replaced dropdown selector** with inline keypress interaction
+- **Single-step**: Show diff → instant keypress → action
+- **Key mappings**: Enter=apply, Esc=skip, E=edit(stub), V=view(stub)
+- **TTY fallback**: Falls back to y/n prompt when stdin is not a TTY (piped/CI)
+- **Removed enquirer dependency** — uses native `readline.emitKeypressEvents`
+
+### Database Refactoring
+
+- **Per-project connections**: `getDb(dbPath)` accepts path parameter instead of global singleton
+- **Connection pooling**: Map-based cache for multiple project databases
+- **Backward compatible**: All existing functions accept optional dbPath
+
+### Search & Agent Updates
+
+- **search.js**: Now accepts dbPath parameter for project-scoped retrieval
+- **agent.js**: Passes dbPath through options for context retrieval
+- **Auto-detect project path**: Agent uses indexed project path as basePath for file resolution
+
+### Dependencies
+
+- **Removed**: `enquirer` (replaced with native readline)
+
 ## [0.4.0] - 2026-04-26
 
 ### Agent System (NEW)
@@ -35,13 +72,11 @@
 
 - **New command**: `node src/app.js agent "query"` for patch generation
 - **Review flag**: `--review` enables optional reviewer step
-- **Version bump**: v0.3.0 → v0.4.0
 
 ### Dependencies
 
 - **Added**: `diff` (unified diff generation)
 - **Added**: `chalk` (terminal coloring)
-- **Added**: `enquirer` (interactive prompts)
 
 ## [0.3.0] - 2025-04-25
 

@@ -2,18 +2,18 @@
 
 ## Overview
 
-Xencode is a local-first code-aware RAG (Retrieval-Augmented Generation) assistant and agentic coding system. It indexes a codebase, generates vector embeddings, stores them in SQLite, and uses hybrid search (vector + keyword) to find relevant code context for LLM queries. In agent mode, it extends this into a full **plan → retrieve → patch → diff → approve → apply** pipeline.
+Xencode is a local-first code-aware RAG (Retrieval-Augmented Generation) assistant and agentic coding system. It indexes multiple codebases into isolated project workspaces, generates vector embeddings, stores them in per-project SQLite databases, and uses hybrid search (vector + keyword) to find relevant code context for LLM queries. In agent mode, it extends this into a full **plan → retrieve → patch → diff → approve → apply** pipeline.
 
 ## Data Flow
 
 ### Index Command
 
 ```
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────┐
-│ scanDirectory │ →  │  indexFile() │ →  │ embedBatch() │ →  │ SQLite  │
-│  (.php etc)   │    │ chunk code   │    │ bge-m3 ONNX  │    │ BLOB    │
-│               │    │ by function  │    │ (256 char)   │    │ storage │
-└──────────────┘    └──────────────┘    └──────────────┘    └─────────┘
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐
+│ scanDirectory │ →  │  indexFile() │ →  │ embedBatch() │ →  │ .xencode/projects/│
+│  (.php etc)   │    │ chunk code   │    │ bge-m3 ONNX  │    │ {id}/index.db     │
+│               │    │ by function  │    │ (256 char)   │    │                   │
+└──────────────┘    └──────────────┘    └──────────────┘    └──────────────────┘
 ```
 
 ### Ask Command
@@ -23,6 +23,8 @@ Xencode is a local-first code-aware RAG (Retrieval-Augmented Generation) assista
 │ embedText()  │ →  │ hybridSearch │ →  │ formatContext │ →  │  queryLLM()  │
 │ bge-m3 embed │    │ vector+kw    │    │ full code     │    │ Qwen 9B/MLX  │
 └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
+       ↑                    ↑
+   (project db)        (project db)
 ```
 
 ### Agent Command
@@ -32,10 +34,10 @@ Xencode is a local-first code-aware RAG (Retrieval-Augmented Generation) assista
 │  User    │ →  │ Planner  │ →  │  Retriever   │ →  │  Coder   │
 │  Query   │    │ (intent) │    │ (20-30 chunks│    │ (patch)  │
 └──────────┘    └──────────┘    └──────────────┘    └──────────┘
-                                                        │
+                                                         │
 ┌──────────┐    ┌──────────┐    ┌──────────────┐        │
 │  Apply   │ ←  │ Approval │ ←  │    Diff      │ ←──────┘
-│  Patch   │    │  (UI)    │    │  (preview)   │
+│  Patch   │    │ (inline) │    │  (preview)   │
 └──────────┘    └──────────┘    └──────────────┘
      │
      └──→ [Optional: Reviewer → retry loop]
@@ -45,14 +47,15 @@ Xencode is a local-first code-aware RAG (Retrieval-Augmented Generation) assista
 
 ```
 src/
-  app.js       - CLI entry point (index / ask / agent commands)
+  app.js       - CLI entry point (index / ask / agent / projects / use)
+  workspace.js - Multi-project workspace manager
   config.js    - LLM_URL, role-based model config (env vars)
   context.js   - Result formatter (uses code_full, agent context)
-  db.js        - SQLite storage (better-sqlite3)
+  db.js        - Per-project SQLite storage (better-sqlite3)
   embedder.js  - BGE-M3 embedding pipeline (Transformers.js)
   indexer.js   - Code scanner & chunker
   llm.js       - LLM API client (role-based routing, JSON retry)
-  search.js    - Hybrid search (cosine + keyword)
+  search.js    - Hybrid search (cosine + keyword, project-scoped)
   ui.js        - Spinner animations, formatters
   agent/
     agent.js   - Orchestrator (pipeline coordination)
@@ -61,11 +64,45 @@ src/
     reviewer.js- Validation + retry feedback loop
     tool.js    - String-based patch application
     diff.js    - Unified diff output with chalk coloring
-    approval.js- Interactive keyboard-driven approval UI
+    approval.js- Inline keypress approval UI
+.xencode/
+  projects/
+    {project_id}/
+      index.db    - Per-project SQLite database
+      meta.json   - Project metadata (name, path, indexed_at)
+  current_project.json  - Active project ID
 models/
   bge-m3/      - Local ONNX model
-xencode.db     - SQLite database (gitignored)
 ```
+
+## Workspace System
+
+### Project Identification
+
+Each project is identified by a hashed path:
+
+```
+projectId = "{folder_name}-{sha256(path)[0:16]}"
+```
+
+Example: `litepos-tester-11f2c47ecb4a8ce5`
+
+### Project Isolation
+
+- Each project gets its own `index.db` — no data sharing
+- `current_project.json` tracks the active project
+- Auto-detection matches cwd against registered project paths
+- Switching projects is instant — no re-indexing needed
+
+### Database Connection Management
+
+`db.js` uses a Map-based connection pool:
+
+```js
+const connections = new Map(); // dbPath → Database instance
+```
+
+Connections are created on-demand and closed via `closeDb()`.
 
 ## Model
 
@@ -99,8 +136,10 @@ All roles fall back to `LLM_MODEL` if their specific env var is not set.
 ## Commands
 
 ```bash
-node src/app.js index /path/to/codebase   # Index a project
-node src/app.js ask "your question"        # Query indexed code
+node src/app.js index /path/to/codebase   # Register and index a project
+node src/app.js projects                   # List all indexed projects
+node src/app.js use <project>              # Switch active project
+node src/app.js ask "your question"        # Query current project
 node src/app.js agent "your task"          # Generate and apply patches
 node src/app.js agent "your task" --review # With review loop
 ```
@@ -166,11 +205,13 @@ Uses the `diff` package to generate unified diffs with chalk-colored output (+ g
 
 ### Approval UI
 
-Keyboard-driven selector using raw stdin:
-- ↑/↓ or k/j for navigation
-- Enter to confirm
-- Ctrl+C to cancel
-- No heavy TUI framework — lightweight and fast
+Inline keypress interaction using native `readline.emitKeypressEvents`:
+- **Enter** → apply patch
+- **Esc** → skip
+- **E** → edit/regenerate (stub)
+- **V** → view full file (stub)
+- **Ctrl+C** → clean exit
+- Falls back to y/n prompt when stdin is not a TTY
 
 ### Tool (Patch Application)
 
