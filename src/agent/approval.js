@@ -1,71 +1,61 @@
+import readline from 'readline';
 import chalk from 'chalk';
 
-export async function askApproval(diffText) {
-  console.log(chalk.cyan('\n┌─── PATCH PREVIEW ───┐\n'));
-  console.log(diffText);
-  console.log(chalk.cyan('\n└───────────────────────┘\n'));
-  console.log(chalk.gray('  ↑ ↓ navigate  ·  Enter confirm  ·  Ctrl+C cancel\n'));
-
-  let selected = 0;
-  const choices = [
-    { value: true, label: '✅  Yes — apply changes' },
-    { value: false, label: '❌  No — skip' }
-  ];
-
-  function render() {
-    const lines = choices.map((c, i) => {
-      const prefix = i === selected ? chalk.cyan.bold('❯ ') : '  ';
-      const text = i === selected ? chalk.white.bold(c.label) : chalk.gray(c.label);
-      return prefix + text;
-    });
-    process.stdout.write('\x1B[?25l');
-    process.stdout.write('\x1B[s');
-    process.stdout.write('\x1B[2K');
-    process.stdout.write(lines.join('\n'));
-    process.stdout.write('\x1B[u');
-  }
-
-  function cleanup() {
-    process.stdin.setRawMode(false);
-    process.stdin.pause();
-    process.stdout.write('\x1B[?25h');
-    process.stdout.write('\n');
-  }
-
+export function askApprovalInline(diffText, filePath) {
   return new Promise((resolve) => {
+    console.log(chalk.dim('\n────────────────────────────'));
+    console.log(chalk.cyan(`📄 ${filePath}\n`));
+    console.log(diffText);
+    console.log(chalk.dim('\n────────────────────────────'));
+    console.log(chalk.green('✔ Proposed patch ready\n'));
+    console.log(chalk.gray('[Enter] Apply   [Esc] Skip   [E] Edit   [V] View full file'));
+    console.log(chalk.dim('────────────────────────────\n'));
+
+    readline.emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
-    process.stdin.resume();
-    render();
 
-    function onKey(data) {
-      const key = data.toString();
+    let handled = false;
 
-      if (key === '\u0003') {
+    const cleanup = () => {
+      if (process.stdin.isRaw) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.removeAllListeners('keypress');
+    };
+
+    process.stdin.on('keypress', (_, key) => {
+      if (handled) return;
+      handled = true;
+
+      if (key.ctrl && key.name === 'c') {
         cleanup();
-        console.log(chalk.yellow('\n⏎  Cancelled'));
-        resolve(false);
+        process.exit(0);
         return;
       }
 
-      if (key === '\r' || key === '\n') {
+      if (key.name === 'return') {
         cleanup();
-        resolve(choices[selected].value);
+        resolve({ action: 'apply' });
         return;
       }
 
-      if (key === '\u001b[A' || key === 'k') {
-        selected = (selected - 1 + choices.length) % choices.length;
-        render();
+      if (key.name === 'escape') {
+        cleanup();
+        resolve({ action: 'skip' });
         return;
       }
 
-      if (key === '\u001b[B' || key === 'j') {
-        selected = (selected + 1) % choices.length;
-        render();
+      if (key.name === 'e') {
+        cleanup();
+        resolve({ action: 'edit' });
         return;
       }
-    }
 
-    process.stdin.on('data', onKey);
+      if (key.name === 'v') {
+        cleanup();
+        resolve({ action: 'view' });
+        return;
+      }
+    });
   });
 }

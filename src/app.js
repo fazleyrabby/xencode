@@ -6,7 +6,7 @@ import { formatContext } from './context.js';
 import { queryLLM } from './llm.js';
 import { Spinner, formatDuration } from './ui.js';
 import { runAgent, applyAgentPatch } from './agent/agent.js';
-import { askApproval } from './agent/approval.js';
+import { askApprovalInline } from './agent/approval.js';
 import chalk from 'chalk';
 
 const STALE_THRESHOLD_MS = 30 * 60 * 1000;
@@ -168,9 +168,9 @@ async function cmdAgent(query, options = {}) {
     console.log(chalk.yellow(`Action: ${result.patch.action} (${result.patch.patch.type})`));
     console.log(chalk.yellow(`Summary: ${result.patch.summary}`));
 
-    const approved = await askApproval(result.diff);
+    const approval = await askApprovalInline(result.diff, result.patch.file);
 
-    if (approved) {
+    if (approval.action === 'apply') {
       const applySpinner = new Spinner('Applying patch... ');
       applySpinner.start();
 
@@ -182,8 +182,12 @@ async function cmdAgent(query, options = {}) {
         applySpinner.fail(`Failed to apply patch: ${err.message}`);
         console.log(chalk.red('\n❌ Patch application failed'));
       }
-    } else {
-      console.log(chalk.dim('\n❌ ცვლილება বাতিল / Skipped'));
+    } else if (approval.action === 'skip') {
+      console.log(chalk.dim('\n❌ Skipped'));
+    } else if (approval.action === 'edit') {
+      console.log(chalk.yellow('\n✏️  Edit/regenerate — coming soon'));
+    } else if (approval.action === 'view') {
+      console.log(chalk.yellow('\n📄 View full file — coming soon'));
     }
   } catch (error) {
     console.error(chalk.red(`\n❌ Agent error: ${error.message}`));
