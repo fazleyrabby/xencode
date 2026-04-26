@@ -76,3 +76,51 @@ node src/app.js index ./project
 ```bash
 node src/app.js index ./project
 ```
+
+## Agent Mode Issues
+
+### "Failed to get valid JSON after 2 attempts"
+
+**Cause**: LLM output is not parseable JSON (common with smaller models or high temperature).
+
+**Fix**:
+1. Lower the temperature for your LLM server (`--temp 0.1` or `--temp 0.2`)
+2. Use a stronger model for the coder role: `export LLM_MODEL_CODER="your-best-model"`
+3. Ensure your LLM supports the `model` parameter in the request
+
+### Patch Application Fails: "Could not find target"
+
+**Cause**: The `replace` or `insert` patch references a function/anchor that doesn't exist in the file.
+
+**Fix**:
+1. Check the diff preview — does the target function name match exactly?
+2. Re-index your codebase to ensure the latest file content is available
+3. Try a more specific query that includes the exact function name
+
+### Patch Application Fails: "File not found"
+
+**Cause**: The coder generated a patch for a file path that doesn't exist on disk.
+
+**Fix**:
+1. Check the generated file path in the diff preview
+2. For `create` patches, ensure the directory path is correct
+3. The agent works best when the indexed codebase path matches the actual working directory
+
+### Agent Produces Irrelevant Patches
+
+**Cause**: Retrieved context doesn't match the user's intent.
+
+**Fix**:
+1. Use more specific queries: "Add refund method to PaymentService" instead of "Add refund"
+2. Include file or class names in your query
+3. Re-index if the codebase has changed significantly
+4. Try the `--review` flag to catch issues before applying
+
+### Approval UI Not Responding
+
+**Cause**: Terminal doesn't support raw mode or stdin is being redirected.
+
+**Fix**:
+1. Ensure you're running in an interactive terminal (not piped input)
+2. Try resizing the terminal window
+3. Press Ctrl+C to cancel and retry

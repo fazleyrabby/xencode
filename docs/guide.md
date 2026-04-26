@@ -73,7 +73,7 @@ node src/app.js index ./litepos-tester
 
 ```
 ╔═══════════════════════════════════════╗
-║         Xencode CLI v0.2.0            ║
+║         Xencode CLI v0.3.0            ║
 ║    Local-first Code RAG Assistant     ║
 ╚═══════════════════════════════════════╝
 
@@ -131,7 +131,7 @@ node src/app.js ask "why is subscription expiring early"
 
 ```
 ╔═══════════════════════════════════════╗
-║         Xencode CLI v0.2.0            ║
+║         Xencode CLI v0.3.0            ║
 ║    Local-first Code RAG Assistant     ║
 ╚═══════════════════════════════════════╝
 
@@ -149,7 +149,94 @@ Based on the provided code context, the billing system works through...
 
 ---
 
-## Step 4: Re-index When Code Changes
+## Step 4: Generate and Apply Patches (Agent Mode)
+
+The agent mode transforms Xencode from a Q&A assistant into an **interactive coding assistant** that generates minimal patches, shows diffs, and requires your approval before applying changes.
+
+### Basic Usage
+
+```bash
+node src/app.js agent "Add refund method to PaymentService"
+```
+
+### With Review Loop
+
+```bash
+node src/app.js agent "Create Laravel refund service" --review
+```
+
+The `--review` flag enables an optional reviewer step that validates the patch before showing it to you.
+
+### What Happens
+
+```
+[PLAN]
+✅ Intent: create, Target: PaymentService
+  Search queries: refund method, PaymentService, refund service
+
+[CONTEXT]
+✅ Retrieved 25 relevant chunks
+
+[CODE]
+✅ Patch generated for app/Services/PaymentService.php (replace)
+
+[DIFF]
+┌─── PATCH PREVIEW ───┐
+
+--- a/PaymentService.php
++++ b/PaymentService.php
+@@ -45,6 +45,18 @@
++    public function refundPayment($orderId, $amount) {
++        // refund implementation
++    }
+
+└───────────────────────┘
+
+  ↑ ↓ navigate  ·  Enter confirm  ·  Ctrl+C cancel
+
+❯ ✅  Yes — apply changes
+  ❌  No — skip
+```
+
+### Interactive Approval
+
+After seeing the diff, you get a **keyboard-driven selector**:
+
+- **↑ / ↓** or **k / j** — navigate between Yes and No
+- **Enter** — confirm selection
+- **Ctrl+C** — cancel and exit
+
+If you select **Yes**, the patch is applied to the file. If **No**, changes are skipped.
+
+### Patch Types
+
+The agent supports three patch operations:
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `create` | New file | Create a new service class |
+| `replace` | Replace existing function/block | Update `refundPayment` implementation |
+| `insert` | Insert after an anchor | Add new method after `__construct` |
+
+### Example Queries
+
+```bash
+# Create new files
+node src/app.js agent "Create a ValidationService class in app/Services"
+
+# Modify existing code
+node src/app.js agent "Add input validation to the checkout method"
+
+# Insert new functionality
+node src/app.js agent "Add logging to the PaymentService constructor"
+
+# Refactor
+node src/app.js agent "Extract the payment validation logic into a separate method"
+```
+
+---
+
+## Step 5: Re-index When Code Changes
 
 If you modify your codebase, re-index to update:
 
@@ -177,8 +264,13 @@ This is just a warning — queries still work, but results may be outdated.
 # LLM endpoint (default: http://127.0.0.1:8080)
 export LLM_URL=http://127.0.0.1:8080
 
-# LLM model (optional, leave empty to use server's default)
+# Default model (optional)
 export LLM_MODEL=""
+
+# Role-specific models (optional, fall back to LLM_MODEL)
+export LLM_MODEL_PLANNER=""    # Fast model for intent parsing
+export LLM_MODEL_CODER=""      # Best model for patch generation
+export LLM_MODEL_REVIEWER=""   # Strict model for validation
 ```
 
 ### Model Path
@@ -218,6 +310,9 @@ node src/app.js index ./my-laravel-project
 
 # 5. Ask questions
 node src/app.js ask "how does authentication work"
+
+# 6. Generate patches
+node src/app.js agent "Add refund method"
 ```
 
 ### Scenario 2: Daily Development
@@ -232,6 +327,9 @@ node src/app.js index ./my-project
 # Throughout the day: ask questions as needed
 node src/app.js ask "where is payment validation"
 node src/app.js ask "explain the refund flow"
+
+# Generate code changes
+node src/app.js agent "Add email notification on refund"
 ```
 
 ### Scenario 3: Debugging a Bug
@@ -245,6 +343,9 @@ node src/app.js ask "show me CheckoutController"
 
 # 3. Ask for analysis
 node src/app.js ask "find potential null pointer issues in billing"
+
+# 4. Apply a fix
+node src/app.js agent "Add null check before accessing order->customer in checkout"
 ```
 
 ---
@@ -282,6 +383,13 @@ node src/app.js index ./your-project
 - Try more specific queries (e.g., "Product model" vs "show me model")
 - Check if file was excluded (e.g., in `storage/`)
 
+### Agent Patch Fails to Apply
+
+- Ensure the indexed codebase path matches the actual file paths
+- For `replace` patches, the target function name must exist in the file
+- For `insert` patches, the anchor must be findable in the file
+- Check the diff preview carefully before approving
+
 ---
 
 ## Performance Tips
@@ -290,6 +398,7 @@ node src/app.js index ./your-project
 2. **Keep queries specific**: "ProductController create method" > "show product"
 3. **Use function names**: "BillingService::createInvoice" for precise results
 4. **Re-index after refactoring** to update embeddings
+5. **Use role-specific models** if you have multiple models available (fast planner, strong coder)
 
 ---
 

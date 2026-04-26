@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.4.0] - 2026-04-26
+
+### Agent System (NEW)
+
+- **Agentic coding pipeline**: plan → retrieve → patch → diff → approve → apply
+- **Planner**: Lightweight intent parser (create/update/explain) with JSON output
+- **Coder**: Patch generator supporting create/replace/insert operations
+- **Reviewer**: Optional validation loop with retry feedback (max 2 retries)
+- **Tool**: String-based patch application (brace-matching for replace, anchor-based for insert)
+- **Diff engine**: Unified diff output with chalk-colored formatting
+
+### Interactive Approval UI
+
+- **Keyboard-driven selector**: ↑↓/kj navigation, Enter to confirm, Ctrl+C to cancel
+- **Raw stdin handling**: No heavy TUI framework — lightweight and fast
+- **Diff preview**: Colored diff shown before approval prompt
+- **Graceful cancellation**: Clean exit on Ctrl+C
+
+### LLM Router
+
+- **Role-based model routing**: planner, coder, reviewer, default roles
+- **Per-role config**: Different max_tokens and temperature per role
+- **JSON retry**: Automatic retry with feedback if LLM output is not valid JSON
+- **New env vars**: `LLM_MODEL_PLANNER`, `LLM_MODEL_CODER`, `LLM_MODEL_REVIEWER`
+
+### Context System
+
+- **Wider retrieval**: Up to 30 chunks for agent mode (vs 5 for ask mode)
+- **Semantic grouping**: Chunks merged into file-level blocks
+- **Token-aware**: Context capped at ~20K tokens
+
+### CLI
+
+- **New command**: `node src/app.js agent "query"` for patch generation
+- **Review flag**: `--review` enables optional reviewer step
+- **Version bump**: v0.3.0 → v0.4.0
+
+### Dependencies
+
+- **Added**: `diff` (unified diff generation)
+- **Added**: `chalk` (terminal coloring)
+- **Added**: `enquirer` (interactive prompts)
+
 ## [0.3.0] - 2025-04-25
 
 ### CLI UI

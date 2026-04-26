@@ -5,12 +5,14 @@ import { search } from './search.js';
 import { formatContext } from './context.js';
 import { queryLLM } from './llm.js';
 import { Spinner, formatDuration } from './ui.js';
+import { runAgent, applyAgentPatch } from './agent/agent.js';
+import chalk from 'chalk';
 
 const STALE_THRESHOLD_MS = 30 * 60 * 1000;
 
 const BANNER = `
 ╔═══════════════════════════════════════╗
-║         Xencode CLI v0.2.0            ║
+║         Xencode CLI v0.3.0            ║
 ║    Local-first Code RAG Assistant     ║
 ╚═══════════════════════════════════════╝
 `;
@@ -18,13 +20,15 @@ const BANNER = `
 function printUsage() {
   console.log(`${BANNER}
 Usage:
-  node src/app.js index <path>    Index a codebase
-  node src/app.js ask <query>     Ask a question about indexed code
+  node src/app.js index <path>          Index a codebase
+  node src/app.js ask <query>           Ask a question about indexed code
+  node src/app.js agent <query>         Generate and apply code patches
 
 Examples:
   node src/app.js index ./my-project
-  node src/app.js ask "Fix validation bug"
   node src/app.js ask "How does billing work?"
+  node src/app.js agent "Add refund method to PaymentService"
+  node src/app.js agent "Create Laravel refund service" --review
 `);
 }
 
@@ -141,6 +145,67 @@ ${query}`;
   }
 }
 
+async function cmdAgent(query, options = {}) {
+  console.log(`${BANNER}`);
+  
+  const lastIndexed = getLastIndexedAt();
+  const now = Date.now();
+  
+  if (!lastIndexed) {
+    console.log('⚠️  No index found. Run: node src/app.js index <path>\n');
+    return;
+  } else if (now - lastIndexed > STALE_THRESHOLD_MS) {
+    const mins = Math.round((now - lastIndexed) / 60000);
+    console.log(`⚠️  Index may be outdated (${mins}m ago). Consider reindexing.\n`);
+  }
+
+  try {
+    const result = await runAgent(query, options);
+
+    console.log(chalk.bold('\n[APPLY]'));
+    console.log(chalk.yellow(`File: ${result.patch.file}`));
+    console.log(chalk.yellow(`Action: ${result.patch.action} (${result.patch.patch.type})`));
+    console.log(chalk.yellow(`Summary: ${result.patch.summary}`));
+
+    const answer = await promptUser('\nApply changes? (y/n): ');
+    
+    if (answer.toLowerCase() === 'y') {
+      const applySpinner = new Spinner('Applying patch... ');
+      applySpinner.start();
+      
+      try {
+        const applyResult = applyAgentPatch(result.patch);
+        applySpinner.succeed(`Patch applied: ${applyResult.action} ${applyResult.file}`);
+        console.log(chalk.green('\n✅ Changes applied successfully'));
+      } catch (err) {
+        applySpinner.fail(`Failed to apply patch: ${err.message}`);
+        console.log(chalk.red('\n❌ Patch application failed'));
+      }
+    } else {
+      console.log(chalk.dim('\n⏭  Changes skipped'));
+    }
+  } catch (error) {
+    console.error(chalk.red(`\n❌ Agent error: ${error.message}`));
+  }
+}
+
+function promptUser(question) {
+  return new Promise((resolve) => {
+    process.stdout.write(question);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+    
+    function onData(data) {
+      const answer = data.trim();
+      process.stdin.pause();
+      process.stdin.removeListener('data', onData);
+      resolve(answer);
+    }
+    
+    process.stdin.on('data', onData);
+  });
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
@@ -149,6 +214,11 @@ async function main() {
     printUsage();
     process.exit(1);
   }
+
+  const options = {
+    enableReview: args.includes('--review'),
+    basePath: process.cwd()
+  };
   
   try {
     switch (command) {
@@ -162,12 +232,21 @@ async function main() {
         break;
       }
       case 'ask': {
-        const query = args.slice(1).join(' ');
+        const query = args.slice(1).filter(a => !a.startsWith('--')).join(' ');
         if (!query) {
           console.error('❌ Error: Please provide a query');
           process.exit(1);
         }
         await cmdAsk(query);
+        break;
+      }
+      case 'agent': {
+        const query = args.slice(1).filter(a => !a.startsWith('--')).join(' ');
+        if (!query) {
+          console.error('❌ Error: Please provide a query');
+          process.exit(1);
+        }
+        await cmdAgent(query, options);
         break;
       }
       default:
