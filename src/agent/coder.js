@@ -19,11 +19,22 @@ Patch types:
 - replace: replace an existing function/block, "target" is the function name to replace, "content" is the new implementation
 - insert: insert new code after an anchor, "target" is the anchor (e.g., "function __construct"), "content" is the new code
 
+CRITICAL FORMATTING RULES:
+- Code MUST be properly formatted with correct indentation
+- Use 4 spaces for PHP, 2 spaces for JS/TS
+- Each statement on its own line — NO compacted/minified code
+- Include proper line breaks between functions, methods, and logic blocks
+- Opening braces on the same line (Laravel/PSR-12 style for PHP)
+- Closing braces on their own line
+- Blank lines between methods and logical sections
+- Match the existing code style from the provided context
+
 Rules:
 - Prefer minimal changes
-- Include necessary imports
-- Match existing code style
-- NO markdown in the JSON values
+- Include necessary imports/use statements
+- Match existing code style from context
+- NO markdown backticks in the JSON content value
+- Escape all quotes and newlines properly for JSON
 - Valid JSON only, no explanation`;
 
 export async function generatePatch(query, planResult, context, existingFileContent) {
@@ -38,7 +49,7 @@ Retrieved context:
 ${context}`;
 
   if (existingFileContent) {
-    prompt += `\n\nExisting file content:\n\`\`\`\n${existingFileContent}\n\`\`\``;
+    prompt += `\n\nExisting file content (match this style):\n\`\`\`\n${existingFileContent}\n\`\`\``;
   }
 
   const result = await callWithJsonRetry({

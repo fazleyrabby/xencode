@@ -37,11 +37,16 @@ Usage:
   node src/app.js projects              List indexed projects
   node src/app.js use <project>         Switch to a project
 
+Flags:
+  --review    Enable reviewer validation loop
+  --auto      Skip approval, write files directly
+
 Examples:
   node src/app.js index ./my-project
   node src/app.js ask "How does billing work?"
   node src/app.js agent "Add refund method to PaymentService"
-  node src/app.js agent "Create Laravel refund service" --review
+  node src/app.js agent "Create Todo CRUD" --auto
+  node src/app.js agent "Add validation" --review --auto
   node src/app.js projects
   node src/app.js use my-project
 `);
@@ -286,9 +291,27 @@ async function cmdAgent(query, options = {}) {
     console.log(chalk.yellow(`Action: ${result.patch.action} (${result.patch.patch.type})`));
     console.log(chalk.yellow(`Summary: ${result.patch.summary}`));
 
-    const approval = await askApprovalInline(result.diff, result.patch.file);
+    let shouldApply = options.auto;
 
-    if (approval.action === 'apply') {
+    if (!options.auto) {
+      const approval = await askApprovalInline(result.diff, result.patch.file);
+      shouldApply = approval.action === 'apply';
+
+      if (approval.action === 'skip') {
+        console.log(chalk.dim('\n❌ Skipped'));
+        return;
+      }
+      if (approval.action === 'edit') {
+        console.log(chalk.yellow('\n✏️  Edit/regenerate — coming soon'));
+        return;
+      }
+      if (approval.action === 'view') {
+        console.log(chalk.yellow('\n📄 View full file — coming soon'));
+        return;
+      }
+    }
+
+    if (shouldApply) {
       const applySpinner = new Spinner('Applying patch... ');
       applySpinner.start();
 
@@ -300,12 +323,6 @@ async function cmdAgent(query, options = {}) {
         applySpinner.fail(`Failed to apply patch: ${err.message}`);
         console.log(chalk.red('\n❌ Patch application failed'));
       }
-    } else if (approval.action === 'skip') {
-      console.log(chalk.dim('\n❌ Skipped'));
-    } else if (approval.action === 'edit') {
-      console.log(chalk.yellow('\n✏️  Edit/regenerate — coming soon'));
-    } else if (approval.action === 'view') {
-      console.log(chalk.yellow('\n📄 View full file — coming soon'));
     }
   } catch (error) {
     console.error(chalk.red(`\n❌ Agent error: ${error.message}`));
@@ -323,6 +340,7 @@ async function main() {
 
   const options = {
     enableReview: args.includes('--review'),
+    auto: args.includes('--auto'),
     basePath: process.cwd()
   };
 

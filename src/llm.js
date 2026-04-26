@@ -9,7 +9,7 @@ const ROLE_MODELS = {
 
 const ROLE_CONFIG = {
   planner: { max_tokens: 512, temperature: 0.1 },
-  coder: { max_tokens: 4096, temperature: 0.2 },
+  coder: { max_tokens: 8192, temperature: 0.2 },
   reviewer: { max_tokens: 1024, temperature: 0.1 },
   default: { max_tokens: 1024, temperature: 0.3 }
 };
