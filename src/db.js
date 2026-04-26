@@ -1,47 +1,53 @@
 import Database from 'better-sqlite3';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const SCHEMA = `
+  CREATE TABLE IF NOT EXISTS code_chunks (
+    id TEXT PRIMARY KEY,
+    file TEXT,
+    type TEXT,
+    name TEXT,
+    code TEXT,
+    code_full TEXT,
+    embedding BLOB
+  )
+`;
 
-const DB_PATH = join(__dirname, '..', 'xencode.db');
+const META_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  )
+`;
 
-let db = null;
+const connections = new Map();
 
-export function getDb() {
-  if (!db) {
-    db = new Database(DB_PATH);
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS code_chunks (
-        id TEXT PRIMARY KEY,
-        file TEXT,
-        type TEXT,
-        name TEXT,
-        code TEXT,
-        code_full TEXT,
-        embedding BLOB
-      )
-    `);
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS meta (
-        key TEXT PRIMARY KEY,
-        value TEXT
-      )
-    `);
-    
-    // Migration: add code_full column if missing
-    try {
-      db.exec(`ALTER TABLE code_chunks ADD COLUMN code_full TEXT`);
-    } catch (e) {
-      // Column already exists, ignore
-    }
+function initDb(database) {
+  database.exec(SCHEMA);
+  database.exec(META_SCHEMA);
+  try {
+    database.exec(`ALTER TABLE code_chunks ADD COLUMN code_full TEXT`);
+  } catch {
+    // Column already exists
   }
-  return db;
 }
 
-export function insertChunks(chunks) {
-  const database = getDb();
+export function getDb(dbPath) {
+  if (!connections.has(dbPath)) {
+    const dir = dirname(dbPath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    const database = new Database(dbPath);
+    initDb(database);
+    connections.set(dbPath, database);
+  }
+  return connections.get(dbPath);
+}
+
+export function insertChunks(chunks, dbPath) {
+  const database = getDb(dbPath);
   const stmt = database.prepare(`
     INSERT OR REPLACE INTO code_chunks (id, file, type, name, code, code_full, embedding)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -67,32 +73,32 @@ export function insertChunks(chunks) {
   insertMany(chunks);
 }
 
-export function updateIndexTimestamp() {
-  const database = getDb();
+export function updateIndexTimestamp(dbPath) {
+  const database = getDb(dbPath);
   database.prepare(`
     INSERT OR REPLACE INTO meta (key, value)
     VALUES ('last_indexed_at', ?)
   `).run(Date.now().toString());
 }
 
-export function getLastIndexedAt() {
-  const database = getDb();
+export function getLastIndexedAt(dbPath) {
+  const database = getDb(dbPath);
   const result = database.prepare(`
     SELECT value FROM meta WHERE key = 'last_indexed_at'
   `).get();
   return result ? parseInt(result.value, 10) : null;
 }
 
-export function getChunkCount() {
-  const database = getDb();
+export function getChunkCount(dbPath) {
+  const database = getDb(dbPath);
   const result = database.prepare(`SELECT COUNT(*) as count FROM code_chunks`).get();
   return result ? result.count : 0;
 }
 
-export function getAllChunks() {
-  const database = getDb();
+export function getAllChunks(dbPath) {
+  const database = getDb(dbPath);
   const chunks = database.prepare('SELECT * FROM code_chunks').all();
-  
+
   return chunks.map(chunk => ({
     ...chunk,
     embedding: chunk.embedding
@@ -101,9 +107,14 @@ export function getAllChunks() {
   }));
 }
 
-export function closeDb() {
-  if (db) {
-    db.close();
-    db = null;
+export function closeDb(dbPath) {
+  if (dbPath && connections.has(dbPath)) {
+    connections.get(dbPath).close();
+    connections.delete(dbPath);
+  } else {
+    for (const [path, database] of connections) {
+      database.close();
+    }
+    connections.clear();
   }
 }

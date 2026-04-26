@@ -11,9 +11,9 @@ function cosineSimilarity(a, b) {
   return dot;
 }
 
-export async function search(query, topK = 5) {
+export async function search(query, topK = 5, dbPath) {
   const queryEmbedding = await embedText(query);
-  const chunks = getAllChunks();
+  const chunks = getAllChunks(dbPath);
   
   const scored = chunks
     .filter(chunk => chunk.embedding)

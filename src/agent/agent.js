@@ -12,7 +12,7 @@ import chalk from 'chalk';
 const RETRIEVAL_TOP_K = 25;
 
 export async function runAgent(query, options = {}) {
-  const { enableReview = false, basePath = process.cwd() } = options;
+  const { enableReview = false, basePath = process.cwd(), dbPath } = options;
 
   console.log(chalk.bold('\n[PLAN]'));
   const planSpinner = new Spinner('Planning... ');
@@ -27,7 +27,7 @@ export async function runAgent(query, options = {}) {
 
   let allResults = [];
   for (const searchQuery of planResult.search_queries) {
-    const results = await search(searchQuery, RETRIEVAL_TOP_K);
+    const results = await search(searchQuery, RETRIEVAL_TOP_K, dbPath);
     allResults.push(...results);
   }
 
