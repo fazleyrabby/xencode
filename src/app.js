@@ -6,6 +6,7 @@ import { formatContext } from './context.js';
 import { queryLLM } from './llm.js';
 import { Spinner, formatDuration } from './ui.js';
 import { runAgent, applyAgentPatch } from './agent/agent.js';
+import { askApproval } from './agent/approval.js';
 import chalk from 'chalk';
 
 const STALE_THRESHOLD_MS = 30 * 60 * 1000;
@@ -167,12 +168,12 @@ async function cmdAgent(query, options = {}) {
     console.log(chalk.yellow(`Action: ${result.patch.action} (${result.patch.patch.type})`));
     console.log(chalk.yellow(`Summary: ${result.patch.summary}`));
 
-    const answer = await promptUser('\nApply changes? (y/n): ');
-    
-    if (answer.toLowerCase() === 'y') {
+    const approved = await askApproval(result.diff);
+
+    if (approved) {
       const applySpinner = new Spinner('Applying patch... ');
       applySpinner.start();
-      
+
       try {
         const applyResult = applyAgentPatch(result.patch);
         applySpinner.succeed(`Patch applied: ${applyResult.action} ${applyResult.file}`);
@@ -182,28 +183,11 @@ async function cmdAgent(query, options = {}) {
         console.log(chalk.red('\n❌ Patch application failed'));
       }
     } else {
-      console.log(chalk.dim('\n⏭  Changes skipped'));
+      console.log(chalk.dim('\n❌ ცვლილება বাতিল / Skipped'));
     }
   } catch (error) {
     console.error(chalk.red(`\n❌ Agent error: ${error.message}`));
   }
-}
-
-function promptUser(question) {
-  return new Promise((resolve) => {
-    process.stdout.write(question);
-    process.stdin.resume();
-    process.stdin.setEncoding('utf8');
-    
-    function onData(data) {
-      const answer = data.trim();
-      process.stdin.pause();
-      process.stdin.removeListener('data', onData);
-      resolve(answer);
-    }
-    
-    process.stdin.on('data', onData);
-  });
 }
 
 async function main() {
