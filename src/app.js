@@ -23,7 +23,7 @@ const STALE_THRESHOLD_MS = 30 * 60 * 1000;
 
 const BANNER = `
 ╔═══════════════════════════════════════╗
-║         Xencode CLI v0.5.0            ║
+║         Xencode CLI v0.6              ║
 ║    Local-first Code RAG Assistant     ║
 ╚═══════════════════════════════════════╝
 `;
@@ -34,6 +34,7 @@ Usage:
   node src/app.js index <path>          Index a codebase
   node src/app.js ask <query>           Ask a question about indexed code
   node src/app.js agent <query>         Generate and apply code patches
+  node src/app.js tui                   Start interactive TUI
   node src/app.js projects              List indexed projects
   node src/app.js use <project>         Switch to a project
 
@@ -47,6 +48,7 @@ Examples:
   node src/app.js agent "Add refund method to PaymentService"
   node src/app.js agent "Create Todo CRUD" --auto
   node src/app.js agent "Add validation" --review --auto
+  node src/app.js tui
   node src/app.js projects
   node src/app.js use my-project
 `);
@@ -384,6 +386,11 @@ async function main() {
           process.exit(1);
         }
         await cmdAgent(query, options);
+        break;
+      }
+      case 'tui': {
+        const { runCLI } = await import('./cli.js');
+        await runCLI();
         break;
       }
       default:

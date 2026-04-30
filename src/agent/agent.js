@@ -1,110 +1,43 @@
-import { plan } from './planner.js';
-import { generatePatch } from './coder.js';
-import { review } from './reviewer.js';
-import { applyPatch } from './tool.js';
-import { generateDiffForPatch, generateFullFileDiff } from './diff.js';
-import { search } from '../search.js';
-import { formatAgentContext } from '../context.js';
-import { readFileSync, existsSync } from 'fs';
-import { Spinner } from '../ui.js';
-import chalk from 'chalk';
-
-const RETRIEVAL_TOP_K = 25;
+import { runQualityLoop, applyResult } from '../core/agent.js';
+import { applyPatch, setBaseDir } from './tool.js';
 
 export async function runAgent(query, options = {}) {
   const { enableReview = false, basePath = process.cwd(), dbPath } = options;
 
-  console.log(chalk.bold('\n[PLAN]'));
-  const planSpinner = new Spinner('Planning... ');
-  planSpinner.start();
-  const planResult = await plan(query);
-  planSpinner.succeed(`Intent: ${planResult.intent}, Target: ${planResult.target}`);
-  console.log(chalk.dim(`  Search queries: ${planResult.search_queries.join(', ')}`));
+  setBaseDir(basePath);
 
-  console.log(chalk.bold('\n[CONTEXT]'));
-  const searchSpinner = new Spinner('Retrieving context... ');
-  searchSpinner.start();
-
-  let allResults = [];
-  for (const searchQuery of planResult.search_queries) {
-    const results = await search(searchQuery, RETRIEVAL_TOP_K, dbPath);
-    allResults.push(...results);
-  }
-
-  const seen = new Set();
-  const uniqueResults = allResults.filter(r => {
-    const key = `${r.file}:${r.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+  const result = await runQualityLoop(query, {
+    basePath,
+    dbPath,
+    enableCritique: enableReview
   });
 
-  uniqueResults.sort((a, b) => b.score - a.score);
-  const topResults = uniqueResults.slice(0, RETRIEVAL_TOP_K);
-  searchSpinner.succeed(`Retrieved ${topResults.length} relevant chunks`);
-
-  const context = formatAgentContext(topResults);
-
-  let existingFileContent = null;
-  if (planResult.target) {
-    const potentialPaths = [
-      planResult.target,
-      `${basePath}/${planResult.target}`,
-      ...topResults
-        .filter(r => r.file.toLowerCase().includes(planResult.target.toLowerCase()))
-        .slice(0, 3)
-        .map(r => r.file)
-    ];
-
-    for (const path of potentialPaths) {
-      if (existsSync(path)) {
-        existingFileContent = readFileSync(path, 'utf-8');
-        break;
-      }
-    }
-  }
-
-  console.log(chalk.bold('\n[CODE]'));
-  const codeSpinner = new Spinner('Generating patch... ');
-  codeSpinner.start();
-  const patchResult = await generatePatch(query, planResult, context, existingFileContent);
-  codeSpinner.succeed(`Patch generated for ${patchResult.file} (${patchResult.patch.type})`);
-
-  console.log(chalk.bold('\n[DIFF]'));
-  let diffOutput;
-  if (patchResult.patch.type === 'create') {
-    diffOutput = generateFullFileDiff(patchResult.file, patchResult.patch.content);
-  } else {
-    diffOutput = generateDiffForPatch(patchResult);
-  }
-  console.log(diffOutput || chalk.yellow('  (no diff available)'));
-
-  let finalPatch = patchResult;
-
-  if (enableReview) {
-    console.log(chalk.bold('\n[REVIEW]'));
-    const reviewSpinner = new Spinner('Reviewing patch... ');
-    reviewSpinner.start();
-    const reviewResult = await review(query, patchResult, existingFileContent);
-    if (reviewResult.valid) {
-      reviewSpinner.succeed('Patch validated');
-      finalPatch = reviewResult.patch;
-    } else {
-      reviewSpinner.warn(`Review issues: ${reviewResult.issues.join('; ')}`);
-      finalPatch = reviewResult.patch;
-    }
+  if (!result.generated.patch?.content) {
+    throw new Error('No patch content generated');
   }
 
   return {
-    plan: planResult,
-    context,
-    patch: finalPatch,
-    diff: diffOutput,
-    existingFileContent
+    plan: result.plan,
+    context: result.retrieval.context,
+    patch: result.generated,
+    diff: result.diff,
+    confidence: result.confidence,
+    stepStatus: result.stepStatus,
+    validation: result.validation,
+    critique: result.critique
   };
 }
 
 export async function applyAgentPatch(patchResult) {
-  const result = applyPatch(patchResult);
-  return result;
+  // patchResult from runAgent is { file, patch: { type, target, content, before, after }, ... }
+  // But app.js logs applyResult.action which comes from applyPatch return
+  const result = applyPatch({
+    file: patchResult.file,
+    patch: patchResult.patch
+  });
+  // Normalize for logging: always use result.action and result.file
+  return {
+    action: result.action || patchResult.patch?.type || 'unknown',
+    file: result.file || patchResult.file
+  };
 }

@@ -13,6 +13,7 @@ const EXCLUDED_DIRS = new Set([
 const MIN_CODE_LENGTH = 50;
 const MAX_CODE_LENGTH = 5000;
 const EMBEDDING_TRUNCATE = 256;
+const SCAN_CONCURRENCY = 16;
 
 function hashCode(code) {
   return createHash('sha256').update(code).digest('hex').substring(0, 16);
@@ -147,7 +148,7 @@ export async function indexFile(filePath) {
   }
 }
 
-export async function indexDirectory(dir) {
+export async function indexDirectory(dir, onProgress) {
   const allChunks = [];
   const seenHashes = new Set();
   const fileStats = [];
@@ -155,36 +156,62 @@ export async function indexDirectory(dir) {
   let skippedFiles = 0;
   let duplicateSkipped = 0;
 
+  // Phase 1: Collect all file paths (fast)
+  const filePaths = [];
   for await (const filePath of scanDirectory(dir)) {
-    totalFiles++;
+    filePaths.push(filePath);
+  }
+
+  // Phase 2: Process files concurrently
+  const chunkBatch = [];
+  let processed = 0;
+
+  async function processFile(filePath) {
     const chunks = await indexFile(filePath);
+    return { filePath, chunks };
+  }
 
-    if (chunks.length === 0) {
-      skippedFiles++;
-    }
+  // Process in chunks to control memory
+  for (let i = 0; i < filePaths.length; i += SCAN_CONCURRENCY) {
+    const batch = filePaths.slice(i, i + SCAN_CONCURRENCY);
+    const results = await Promise.all(batch.map(processFile));
 
-    for (const chunk of chunks) {
-      const hash = hashCode(chunk.code);
-      if (!seenHashes.has(hash)) {
-        seenHashes.add(hash);
-        allChunks.push(chunk);
+    for (const { filePath, chunks } of results) {
+      totalFiles++;
+      processed++;
 
-        const existing = fileStats.find(s => s.file === filePath);
-        if (existing) {
-          existing.chunks++;
+      if (onProgress && processed % 50 === 0) {
+        onProgress(processed, filePaths.length);
+      }
+
+      if (chunks.length === 0) {
+        skippedFiles++;
+      }
+
+      for (const chunk of chunks) {
+        const hash = hashCode(chunk.code);
+        if (!seenHashes.has(hash)) {
+          seenHashes.add(hash);
+          chunkBatch.push(chunk);
+
+          const existing = fileStats.find(s => s.file === filePath);
+          if (existing) {
+            existing.chunks++;
+          } else {
+            fileStats.push({ file: filePath, chunks: 1 });
+          }
         } else {
-          fileStats.push({ file: filePath, chunks: 1 });
+          duplicateSkipped++;
         }
-      } else {
-        duplicateSkipped++;
       }
     }
 
-    if (allChunks.length > 20000) {
-      console.error(`\nToo many chunks detected (${allChunks.length}). Fix chunking rules.`);
-      process.exit(1);
-    }
+    // Push batch to allChunks periodically to free memory
+    allChunks.push(...chunkBatch.splice(0));
   }
+
+  // Push remaining
+  allChunks.push(...chunkBatch);
 
   console.log(`Scanned ${totalFiles} files`);
   console.log(`Created ${allChunks.length} chunks (${duplicateSkipped} duplicates skipped, ${skippedFiles} files skipped)`);

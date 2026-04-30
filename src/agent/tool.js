@@ -1,11 +1,30 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname } from 'path';
+import { dirname, join, isAbsolute } from 'path';
+
+let baseDir = process.cwd();
+
+export function setBaseDir(dir) {
+  baseDir = dir;
+}
+
+export function resolvePath(filePath) {
+  if (isAbsolute(filePath)) {
+    return filePath;
+  }
+  return join(baseDir, filePath);
+}
 
 export function applyPatch(patchResult) {
   const { file, action, patch } = patchResult;
 
   if (!patch || !patch.type) {
     throw new Error('Invalid patch: missing type');
+  }
+
+  // Handle empty before = insert into existing file
+  // Works for both 'replace' and 'create' type when before is empty
+  if ((patch.type === 'replace' || patch.type === 'create') && !patch.before && file) {
+    return applyInsertMethod(file, patch.content || '');
   }
 
   switch (patch.type) {
@@ -21,20 +40,22 @@ export function applyPatch(patchResult) {
 }
 
 function applyCreate(filePath, content) {
-  const dir = dirname(filePath);
+  const resolvedPath = resolvePath(filePath);
+  const dir = dirname(resolvedPath);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(filePath, content, 'utf-8');
+  writeFileSync(resolvedPath, content, 'utf-8');
   return { action: 'created', file: filePath };
 }
 
 function applyReplace(filePath, target, newContent) {
-  if (!existsSync(filePath)) {
+  const resolvedPath = resolvePath(filePath);
+  if (!existsSync(resolvedPath)) {
     throw new Error(`File not found: ${filePath}`);
   }
 
-  const existing = readFileSync(filePath, 'utf-8');
+  const existing = readFileSync(resolvedPath, 'utf-8');
   const lines = existing.split('\n');
   const targetLower = target.toLowerCase();
 
@@ -83,16 +104,17 @@ function applyReplace(filePath, target, newContent) {
   const after = lines.slice(endLine + 1).join('\n');
   const newFile = [before, newContent, after].filter(Boolean).join('\n');
 
-  writeFileSync(filePath, newFile, 'utf-8');
+  writeFileSync(resolvedPath, newFile, 'utf-8');
   return { action: 'replaced', file: filePath, target, lines: `${startLine + 1}-${endLine + 1}` };
 }
 
 function applyInsert(filePath, anchor, content) {
-  if (!existsSync(filePath)) {
+  const resolvedPath = resolvePath(filePath);
+  if (!existsSync(resolvedPath)) {
     throw new Error(`File not found: ${filePath}`);
   }
 
-  const existing = readFileSync(filePath, 'utf-8');
+  const existing = readFileSync(resolvedPath, 'utf-8');
   const lines = existing.split('\n');
   const anchorLower = anchor.toLowerCase();
 
@@ -125,6 +147,80 @@ function applyInsert(filePath, anchor, content) {
   const after = lines.slice(insertAfterLine + 1).join('\n');
   const newFile = [before, content, after].filter(Boolean).join('\n');
 
-  writeFileSync(filePath, newFile, 'utf-8');
+  writeFileSync(resolvedPath, newFile, 'utf-8');
   return { action: 'inserted', file: filePath, afterLine: insertAfterLine + 1 };
+}
+
+// Insert method into existing class when before is empty
+function applyInsertMethod(filePath, newMethod) {
+  const resolvedPath = resolvePath(filePath);
+  if (!existsSync(resolvedPath)) {
+    throw new Error(`File not found: ${filePath}`);
+  }
+
+  const content = readFileSync(resolvedPath, 'utf-8');
+  const trimmed = content.trim();
+
+  // Empty file - write full content directly
+  if (trimmed === '') {
+    writeFileSync(resolvedPath, newMethod + '\n', 'utf-8');
+    return { action: 'created', file: filePath };
+  }
+
+  // If newMethod contains class definition - it's a full file overwrite, not insert
+  // Strip the class wrapper and extract just the method
+  let methodToInsert = newMethod;
+  const classMatch = newMethod.match(/class\s+\w+\s+extends\s+\w+\s*\{([\s\S]*)\}\s*$/);
+  if (classMatch) {
+    // Extract method content from class body
+    const classBody = classMatch[1];
+    // Find the first method in the class body
+    const methodMatch = classBody.match(/(public|protected|private)\s+(?:static\s+)?function\s+\w+\s*\([^)]*\)\s*(?::\s*\w+)?\s*\{[\s\S]*?\}\s*$/);
+    if (methodMatch) {
+      methodToInsert = '    ' + methodMatch[0];
+    }
+  }
+
+  const lines = content.split('\n');
+
+  // Find end of class (closing brace)
+  let insertLine = -1;
+  let braceCount = 0;
+  let inClass = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    for (const char of line) {
+      if (char === '{') { braceCount++; inClass = true; }
+      if (char === '}') braceCount--;
+    }
+    if (inClass && braceCount === 0 && insertLine === -1) {
+      insertLine = i;
+      break;
+    }
+  }
+
+  // No class brace found - append at end of file
+  if (insertLine === -1) {
+    if (trimmed.endsWith('}')) {
+      // Find the last brace
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i].includes('}')) {
+          insertLine = i;
+          break;
+        }
+      }
+    } else {
+      // Just append to file
+      writeFileSync(resolvedPath, content + '\n' + methodToInsert, 'utf-8');
+      return { action: 'appended', file: filePath };
+    }
+  }
+
+  const before = lines.slice(0, insertLine).join('\n');
+  const after = lines.slice(insertLine).join('\n');
+  const newFile = [before, methodToInsert, after].filter(Boolean).join('\n');
+
+  writeFileSync(resolvedPath, newFile, 'utf-8');
+  return { action: 'method_inserted', file: filePath };
 }

@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.6.0] - 2026-04-27
+
+### Quality Loop Upgrade (v0.4 → v0.5)
+
+- **Structured Planner**: JSON schema with intent, target_files, search_queries, required_context, risks, steps
+- **Retrieval Upgrade**: Semantic(20) + Keyword(10) merge → rerank → top5 → neighbor expansion → ≤4k tokens
+- **Critique Pass**: Mandatory code review checking assumptions, edge cases, Laravel conventions
+- **Regeneration**: Max 1 regeneration pass based on critique feedback
+- **Validation**: `php -l` syntax check + pattern detection (duplicates, missing imports, invalid syntax)
+- **Confidence Scoring**: (retrieval×0.4) + (plan×0.2) + (validation?0.2:0) + (critique_clean?0.2:0)
+
+### Interactive TUI + Stateful Session (v0.6)
+
+- **Session State** (`core/session.js`): Persistent session with history, lastPlan/Context/Result, workingFiles, memory, stats
+- **Mode Classification** (`core/mode.js`): RETRIEVE/EXPLAIN/MODIFY/GENERAL routing
+- **Context Persistence** (`core/context.js`): Merges previous + current context (≤4k tokens)
+- **Interactive Patch UI** (`cli/patch.js`): [Enter] apply / [r] regenerate / [e] edit / [s] skip
+- **Command System** (`cli/commands.js`): /stats, /files, /plan, /context, /history, /memory, /debug, /reset
+- **TUI Loop** (`cli/tui.js`): Continuous interactive session with mode dispatch
+
+### Core Module Architecture
+
+- **Pure functions**: Each module (planner, retriever, generator, critic, validator, scorer) is stateless
+- **No hidden state**: All state managed through session object
+- **ES Module compliant**: Full ESM syntax, no CommonJS require()
+
+### New CLI Commands
+
+- `node src/app.js tui` — Start interactive TUI session
+- Commands: /exit, /reset, /stats, /files, /plan, /context, /debug, /help
+
 ## [0.5.0] - 2026-04-26
 
 ### Multi-Project Workspaces (NEW)

@@ -13,6 +13,7 @@ env.useBrowserCache = false;
 
 const MAX_INPUT_LENGTH = 256;
 const RETRY_ATTEMPTS = 2;
+const BATCH_SIZE = 64;
 
 let embedder = null;
 
@@ -59,7 +60,7 @@ export async function getEmbedder() {
 export async function embedBatchForDb(texts, onBatch) {
   const model = await getEmbedder();
   const truncated = texts.map(truncateText);
-  const batchSize = 32;
+  const batchSize = BATCH_SIZE;
   const batches = chunkArray(truncated, batchSize);
   const total = texts.length;
   const startTime = Date.now();

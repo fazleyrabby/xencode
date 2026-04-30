@@ -52,8 +52,28 @@ export function generateDiffForPatch(patchResult) {
     return '';
   }
 
+  // If before is empty, this is an insert - show minimal diff
+  if (!patch.before) {
+    return generateInsertDiff(file, patch.content);
+  }
+
   const diffText = generateDiff(file, patch.content);
   return formatDiff(diffText);
+}
+
+function generateInsertDiff(filePath, newMethod) {
+  const fileName = filePath.split('/').pop();
+  const lines = newMethod.split('\n');
+
+  const header = `--- a/${fileName}\n+++ b/${fileName}`;
+  const hunk = `@@ -0,0 +1,${lines.length} @@`;
+
+  const diffLines = [header, hunk];
+  for (const line of lines) {
+    diffLines.push(chalk.green('+ ' + line));
+  }
+
+  return diffLines.join('\n');
 }
 
 export function generateFullFileDiff(filePath, newContent) {
